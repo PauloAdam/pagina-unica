@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sistema de Paletes NLE</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#94a3b8; --accent:#60a5fa; --glass: rgba(255,255,255,0.04);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#071025 0%, #0b1220 100%);color:#e6eef8;min-height:100vh}
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,0.03)}
+    h1{font-size:18px;margin:0}
+    .container{padding:16px;max-width:1100px;margin:14px auto}
+    .topbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .card{background:var(--card);border-radius:12px;padding:10px;box-shadow:0 6px 18px rgba(2,6,23,0.6);min-width:220px}
+    .controls{display:flex;gap:8px;align-items:center}
+    input[type=text], textarea, select{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;min-width:160px}
+    button{background:var(--accent);border:none;color:#04233a;padding:8px 10px;border-radius:8px;cursor:pointer;font-weight:600}
+    button.secondary{background:transparent;color:var(--accent);border:1px solid rgba(96,165,250,0.12)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:14px}
+    .pallet{border-radius:10px;padding:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);border:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column;gap:8px;min-height:110px}
+    .pallet .head{display:flex;align-items:center;gap:8px}
+    .colorbox{width:28px;height:28px;border-radius:6px;border:2px solid rgba(0,0,0,0.15);box-shadow:0 3px 8px rgba(2,6,23,0.5)}
+    .pallet h3{margin:0;font-size:16px}
+    .pallet small{color:var(--muted)}
+    .chips{display:flex;gap:6px;flex-wrap:wrap}
+    .chip{padding:6px 8px;border-radius:999px;background:var(--glass);font-size:12px;color:var(--muted)}
+    .footer-actions{display:flex;gap:8px;align-items:center}
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:20px;z-index:40}
+    .modal.open{display:flex}
+    .modal .panel{width:100%;max-width:820px;background:linear-gradient(180deg,#071425, #071a2a);padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.04)}
+    .row{display:flex;gap:10px;align-items:center}
+    .small{font-size:13px;color:var(--muted)}
+    .actions{display:flex;gap:8px;margin-top:12px}
+    .resultado-palete{background:rgba(255,255,255,0.02);border-radius:10px;padding:10px;margin-bottom:10px}
+    @media (max-width:720px){header{flex-direction:column;align-items:flex-start} .controls{flex-wrap:wrap} .card{min-width:unset}}
+  </style>
+
+  <!-- jsPDF and html2canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Sistema de Paletes NLE</h1>
+      <div class="small">Rápido, offline — até 20 paletes; backup automático ao salvar</div>
+    </div>
+
+    <div class="topbar">
+      <div class="card">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="search" type="text" placeholder="Pesquisar palete ou produto (ex: 1 ou 878)">
+          <button id="btnClear" class="secondary">Limpar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="controls">
+          <button id="btnNew">Novo Palete</button>
+          <button id="btnExport" class="secondary">Exportar JSON</button>
+          <button id="btnImport" class="secondary">Importar JSON</button>
+          <button id="btnSeparate" class="secondary">Separação</button>
+          <button id="btnPdfPortrait" class="secondary">PDF (Retrato - Cards)</button>
+          <button id="btnPdfLandscape" class="secondary">PDF (Paisagem - Cards)</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section>
+      <div class="grid" id="grid"></div>
+    </section>
+  </main>
+
+  <!-- Modal Novo/Editar -->
+  <div class="modal" id="modal">
+    <div class="panel">
+      <h2 id="modalTitle">Novo Palete</h2>
+      <div style="margin-top:8px" class="small">Insira o número do palete e os códigos dos produtos (separados por vírgula).</div>
+      <div style="margin-top:12px" class="row">
+        <input id="palletNumber" type="text" placeholder="Número do palete (ex: 1)" />
+        <input id="palletColor" type="text" placeholder="Cor (opcional, hex ou nome)" />
+      </div>
+      <div style="margin-top:8px">
+        <textarea id="palletProducts" rows="5" placeholder="Produtos: 88,768,5520" style="width:100%;border-radius:8px;padding:10px;background:transparent;border:1px solid rgba(255,255,255,0.04);"></textarea>
+      </div>
+      <div class="actions">
+        <button id="savePallet">Salvar</button>
+        <button id="cancelPallet" class="secondary">Cancelar</button>
+        <button id="deletePallet" class="secondary" style="display:none">Excluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detalhes -->
+  <div class="modal" id="modalDetail">
+    <div class="panel">
+      <h2 id="detailTitle">Palete</h2>
+      <div id="detailColor" style="height:20px;width:60px;border-radius:6px;margin-top:8px"></div>
+      <div style="margin-top:10px" class="small">Produtos no palete:</div>
+      <div id="detailList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+      <div class="actions">
+        <button id="closeDetail">Fechar</button>
+        <button id="editFromDetail" class="secondary">Editar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Separação -->
+  <div class="modal" id="modalSeparate">
+    <div class="panel">
+      <h2>Separação de Pedido</h2>
+      <div class="small" style="margin-top:6px">Digite os códigos dos produtos que precisa (separados por vírgula). O sistema mostrará em quais paletes esses produtos estão, agrupados por palete.</div>
+      <div style="margin-top:12px">
+        <textarea id="sepInput" rows="4" placeholder="Ex: 878,768" style="width:100%;border-radius:8px;padding:10px;background:transparent;border:1px solid rgba(255,255,255,0.04);"></textarea>
+      </div>
+      <div style="margin-top:10px" class="small">Resultado (agrupado por palete):</div>
+      <div id="sepResult" style="margin-top:8px;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:6px"></div>
+      <div class="actions">
+        <button id="sepOk">OK</button>
+        <button id="sepPrint" class="secondary">Imprimir/Salvar (PDF Retrato)</button>
+        <button id="sepPrintLand" class="secondary">Imprimir/Salvar (PDF Paisagem)</button>
+        <button id="sepClose" class="secondary">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <input id="fileInput" type="file" accept="application/json" style="display:none" />
+
+  <script>
+    // --- Config ---
+    const MAX_PALLETS = 20;
+    const COLORS = ['#2563eb','#16a34a','#f97316','#ef4444','#8b5cf6','#06b6d4','#f59e0b','#10b981','#db2777','#84cc16','#7c3aed','#e11d48','#0ea5e9','#f43f5e','#b45309','#0891b2','#14b8a6','#a78bfa','#ef9a9a','#60a5fa'];
+
+    // --- Estado ---
+    let pallets = []; // { number, color, products: [] }
+    let editingIndex = null;
+
+    // --- DOM refs ---
+    const grid = document.getElementById('grid');
+    const modal = document.getElementById('modal');
+    const modalDetail = document.getElementById('modalDetail');
+    const palletNumber = document.getElementById('palletNumber');
+    const palletColor = document.getElementById('palletColor');
+    const palletProducts = document.getElementById('palletProducts');
+    const modalTitle = document.getElementById('modalTitle');
+    const savePallet = document.getElementById('savePallet');
+    const cancelPallet = document.getElementById('cancelPallet');
+    const deletePallet = document.getElementById('deletePallet');
+    const btnNew = document.getElementById('btnNew');
+    const btnExport = document.getElementById('btnExport');
+    const btnImport = document.getElementById('btnImport');
+    const fileInput = document.getElementById('fileInput');
+    const search = document.getElementById('search');
+    const btnClear = document.getElementById('btnClear');
+    const btnSeparate = document.getElementById('btnSeparate');
+    const btnPdfPortrait = document.getElementById('btnPdfPortrait');
+    const btnPdfLandscape = document.getElementById('btnPdfLandscape');
+
+    const detailTitle = document.getElementById('detailTitle');
+    const detailColor = document.getElementById('detailColor');
+    const detailList = document.getElementById('detailList');
+    const closeDetail = document.getElementById('closeDetail');
+    const editFromDetail = document.getElementById('editFromDetail');
+
+    const modalSeparate = document.getElementById('modalSeparate');
+    const sepInput = document.getElementById('sepInput');
+    const sepResult = document.getElementById('sepResult');
+    const sepOk = document.getElementById('sepOk');
+    const sepClose = document.getElementById('sepClose');
+    const sepPrint = document.getElementById('sepPrint');
+    const sepPrintLand = document.getElementById('sepPrintLand');
+
+    // --- Storage helpers ---
+    function saveToStorage(){
+      // save to localStorage
+      try{
+        localStorage.setItem('pallets_v1', JSON.stringify(pallets));
+      }catch(e){
+        console.error('Erro ao salvar no localStorage', e);
+      }
+
+      // automatic backup file download
+      try{
+        const dataStr = JSON.stringify(pallets, null, 2);
+        const blob = new Blob([dataStr], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // include timestamp so multiple saves don't overwrite automatically in downloads list
+        const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'_');
+        a.download = `pallets_backup_${ts}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }catch(e){
+        console.error('Erro ao gerar backup automático', e);
+      }
+    }
+
+    function loadFromStorage(){
+      try{
+        const raw = localStorage.getItem('pallets_v1');
+        if(raw){
+          pallets = JSON.parse(raw);
+        }
+      }catch(e){
+        console.error('Erro ao carregar do localStorage', e);
+        pallets = [];
+      }
+    }
+
+    // --- UI render ---
+    function assignColor(i){ return COLORS[i % COLORS.length]; }
+
+    function render(){
+      grid.innerHTML = '';
+      const q = search.value.trim().toLowerCase();
+
+      pallets.forEach((p, idx) => {
+        // normalize object fields (compatibility with older imports)
+        if(!p.products && p.produtos) p.products = p.produtos;
+        if(!p.color && p.cor) p.color = p.cor;
+
+        if(q){
+          const inProducts = (p.products || []).join(',').toLowerCase().includes(q);
+          const inNumber = String(p.number).toLowerCase().includes(q);
+          if(!inProducts && !inNumber) return;
+        }
+
+        const el = document.createElement('div'); el.className='pallet';
+        el.innerHTML = `
+          <div class="head">
+            <div class="colorbox" style="background:${p.color || assignColor(idx)}"></div>
+            <div>
+              <h3>Palete ${p.number}</h3>
+              <small>${(p.products||[]).length} produto(s)</small>
+            </div>
+          </div>
+          <div class="chips">${(p.products||[]).slice(0,6).map(x=>`<div class="chip">${x}</div>`).join('')}</div>
+          <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center">
+            <div class="small">#${idx+1}</div>
+            <div class="footer-actions">
+              <button data-idx="${idx}" class="btnView secondary">Ver</button>
+              <button data-idx="${idx}" class="btnEdit">Editar</button>
+            </div>
+          </div>
+        `;
+        grid.appendChild(el);
+      });
+
+      // attach events
+      document.querySelectorAll('.btnView').forEach(b=>b.onclick=(e)=>{ const i = +e.currentTarget.dataset.idx; openDetail(i); });
+      document.querySelectorAll('.btnEdit').forEach(b=>b.onclick=(e)=>{ const i = +e.currentTarget.dataset.idx; openEdit(i); });
+    }
+
+    // --- Palete CRUD ---
+    function openNew(){
+      editingIndex = null;
+      modalTitle.textContent = 'Novo Palete';
+      palletNumber.value = '';
+      palletColor.value = '';
+      palletProducts.value = '';
+      deletePallet.style.display = 'none';
+      modal.classList.add('open');
+    }
+
+    function openEdit(i){
+      editingIndex = i;
+      const p = pallets[i];
+      modalTitle.textContent = 'Editar Palete';
+      palletNumber.value = p.number;
+      palletColor.value = p.color || '';
+      palletProducts.value = (p.products || []).join(',');
+      deletePallet.style.display = 'inline-block';
+      modal.classList.add('open');
+    }
+
+    function openDetail(i){
+      const p = pallets[i];
+      detailTitle.textContent = `Palete ${p.number}`;
+      detailColor.style.background = p.color || assignColor(i);
+      detailList.innerHTML = '';
+      (p.products || []).forEach(code=>{
+        const d = document.createElement('div'); d.className='chip'; d.textContent = code; detailList.appendChild(d);
+      });
+      modalDetail.dataset.idx = i;
+      modalDetail.classList.add('open');
+    }
+
+    function closeModal(){ modal.classList.remove('open'); editingIndex = null; }
+    function closeDetailModal(){ modalDetail.classList.remove('open'); }
+
+    savePallet.onclick = ()=>{
+      const num = (palletNumber.value || '').trim();
+      const raw = (palletProducts.value || '').trim();
+      if(!num){ alert('Informe o número do palete.'); return; }
+      if(!raw){ alert('Informe ao menos um produto.'); return; }
+      const products = raw.split(',').map(s=>s.trim()).filter(Boolean);
+      if(products.length === 0){ alert('Produtos inválidos.'); return; }
+
+      if(editingIndex === null){
+        if(pallets.length >= MAX_PALLETS){ alert('Limite de paletes atingido.'); return; }
+        if(pallets.some(p=>String(p.number) === num)){ if(!confirm('Já existe um palete com este número. Deseja continuar e criar outro com mesmo número?')) return; }
+        const color = (palletColor.value || '').trim() || assignColor(pallets.length);
+        pallets.push({number: num, color, products});
+      } else {
+        pallets[editingIndex].number = num;
+        pallets[editingIndex].color = (palletColor.value || '').trim() || pallets[editingIndex].color;
+        pallets[editingIndex].products = products;
+      }
+
+      saveToStorage();
+      render();
+      closeModal();
+    };
+
+    cancelPallet.onclick = ()=>{ closeModal(); };
+
+    deletePallet.onclick = ()=>{
+      const idx = Number(editingIndex);
+      if(Number.isNaN(idx) || idx === null){ alert('Erro ao excluir.'); return; }
+      if(!confirm('Excluir este palete?')) return;
+      pallets.splice(idx, 1);
+      saveToStorage();
+      render();
+      closeModal();
+    };
+
+    btnNew.onclick = openNew;
+
+    // --- Import / Export ---
+    btnExport.onclick = ()=>{
+      const dataStr = JSON.stringify(pallets, null, 2);
+      const blob = new Blob([dataStr], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'pallets_export.json'; a.click(); URL.revokeObjectURL(url);
+    };
+
+    btnImport.onclick = ()=>{ fileInput.click(); };
+    fileInput.onchange = (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      const r = new FileReader();
+      r.onload = ()=>{
+        try{
+          let imported = JSON.parse(r.result);
+          // tolerate different field names
+          imported = imported.map((p,i)=>({
+            number: p.number ?? p.numero ?? (`P${i+1}`),
+            color: p.color ?? p.cor ?? assignColor(i),
+            products: p.products ?? p.produtos ?? []
+          }));
+          if(imported.length > MAX_PALLETS){
+            if(!confirm(`O arquivo contém mais paletes que o máximo permitido (${MAX_PALLETS}). Importar apenas os primeiros ${MAX_PALLETS}?`)) return;
+            imported = imported.slice(0, MAX_PALLETS);
+          }
+          pallets = imported;
+          saveToStorage();
+          render();
+          alert('Importação concluída');
+        }catch(err){
+          alert('Arquivo inválido. Certifique-se de ser um JSON com formato correto.');
+        }
+      };
+      r.readAsText(f);
+    };
+
+    search.oninput = ()=>render();
+    btnClear.onclick = ()=>{ search.value=''; render(); };
+
+    closeDetail.onclick = closeDetailModal;
+    editFromDetail.onclick = ()=>{ const i = +modalDetail.dataset.idx; closeDetailModal(); openEdit(i); };
+
+    // --- Separação ---
+    function openSeparacao(){ sepInput.value = ''; sepResult.innerHTML = ''; modalSeparate.classList.add('open'); }
+    function closeSeparacao(){ modalSeparate.classList.remove('open'); }
+    btnSeparate.onclick = openSeparacao;
+    sepClose.onclick = closeSeparacao;
+
+    function processarSeparacao(){
+      const raw = (sepInput.value || '').trim();
+      if(!raw){ alert('Digite ao menos um código.'); return null; }
+      const lista = raw.split(',').map(s=>s.trim()).filter(Boolean);
+      const agrupado = [];
+      pallets.forEach(p=>{
+        const encontrados = (p.products || []).filter(prod => lista.includes(String(prod)));
+        if(encontrados.length > 0) agrupado.push({number: p.number, color: p.color || assignColor(0), produtos: encontrados});
+      });
+      // render agrupado
+      sepResult.innerHTML = '';
+      if(agrupado.length === 0){ sepResult.innerHTML = '<div class="small">Nenhum produto encontrado nos paletes cadastrados.</div>'; return agrupado; }
+      agrupado.forEach(a=>{
+        const card = document.createElement('div'); card.className = 'resultado-palete';
+        card.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><div style="width:18px;height:18px;border-radius:4px;background:${a.color};border:1px solid rgba(0,0,0,0.12)"></div><div><strong>Palete ${a.number}</strong></div></div><div style="margin-top:8px"><strong>Produtos encontrados:</strong> ${a.produtos.join(', ')}</div>`;
+        sepResult.appendChild(card);
+      });
+      return agrupado;
+    }
+
+    sepOk.onclick = ()=>{ processarSeparacao(); };
+    sepPrint.onclick = async ()=>{ const agr = processarSeparacao(); if(!agr || agr.length===0) return; await gerarPdfFromAgrupado(agr,'portrait'); };
+    sepPrintLand.onclick = async ()=>{ const agr = processarSeparacao(); if(!agr || agr.length===0) return; await gerarPdfFromAgrupado(agr,'landscape'); };
+
+    // --- PDF generation (cards) ---
+    async function gerarPdfFromAgrupado(agrupado, orientation='portrait'){
+      // create a printable white container
+      const temp = document.createElement('div');
+      temp.style.padding = '16px';
+      temp.style.background = '#fff';
+      temp.style.color = '#000';
+      temp.style.width = (orientation === 'portrait') ? '768px' : '1100px';
+      temp.style.fontFamily = 'Arial, sans-serif';
+
+      // header
+      const header = document.createElement('div');
+      header.style.display = 'flex'; header.style.justifyContent = 'space-between'; header.style.alignItems = 'center'; header.style.marginBottom = '12px';
+      const title = document.createElement('div');
+      title.innerHTML = `<h2 style="margin:0">Sistema de Paletes NLE - Separação</h2><div style="font-size:12px;color:#333">Data: ${new Date().toLocaleString()}</div>`;
+      const logoBox = document.createElement('div');
+      logoBox.style.width = '120px'; logoBox.style.height='40px'; logoBox.style.border='1px dashed #ccc'; logoBox.style.display='flex'; logoBox.style.alignItems='center'; logoBox.style.justifyContent='center';
+      logoBox.textContent = 'LOGO';
+      header.appendChild(title); header.appendChild(logoBox);
+      temp.appendChild(header);
+
+      agrupado.forEach(a=>{
+        const card = document.createElement('div');
+        card.style.border = '1px solid #ddd';
+        card.style.borderRadius = '8px';
+        card.style.padding = '10px';
+        card.style.marginBottom = '10px';
+        card.style.display = 'flex';
+        card.style.gap = '12px';
+        card.style.alignItems = 'flex-start';
+
+        const color = document.createElement('div');
+        color.style.width = '18px'; color.style.height = '18px'; color.style.borderRadius='4px'; color.style.background = a.color; color.style.border='1px solid #999';
+
+        const content = document.createElement('div');
+        const h = document.createElement('div'); h.innerHTML = `<strong>Palete ${a.number}</strong>`;
+        const p = document.createElement('div'); p.style.marginTop='6px'; p.innerHTML = `<strong>Produtos encontrados:</strong> ${a.produtos.join(', ')}`;
+
+        content.appendChild(h); content.appendChild(p);
+        card.appendChild(color); card.appendChild(content);
+        temp.appendChild(card);
+      });
+
+      document.body.appendChild(temp);
+      const canvas = await html2canvas(temp, {scale:2});
+      const imgData = canvas.toDataURL('image/png');
+      document.body.removeChild(temp);
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({orientation: orientation, unit:'pt', format:'a4'});
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgProps = { width: canvas.width, height: canvas.height };
+      const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height);
+      const imgW = imgProps.width * ratio;
+      const imgH = imgProps.height * ratio;
+      pdf.addImage(imgData, 'PNG', (pdfWidth - imgW)/2, 20, imgW, imgH);
+      pdf.save(`separacao_${(new Date()).toISOString().slice(0,19).replace(/[:T]/g,'_')}.pdf`);
+    }
+
+    // top-level pdfs (all pallets)
+    btnPdfPortrait.onclick = async ()=>{
+      if(pallets.length === 0){ alert('Nenhum palete cadastrado.'); return; }
+      const agr = pallets.map(p=>({number:p.number,color:p.color || assignColor(0),produtos: p.products || []}));
+      await gerarPdfFromAgrupado(agr,'portrait');
+    };
+    btnPdfLandscape.onclick = async ()=>{
+      if(pallets.length === 0){ alert('Nenhum palete cadastrado.'); return; }
+      const agr = pallets.map(p=>({number:p.number,color:p.color || assignColor(0),produtos: p.products || []}));
+      await gerarPdfFromAgrupado(agr,'landscape');
+    };
+
+    // --- Init demo/load ---
+    loadFromStorage();
+    render();
+
+    // preload sample if empty (helps first-time)
+    if(!pallets || pallets.length === 0){
+      pallets = [
+        {number:'1', color: assignColor(0), products: ['88','768','5520','441','2230']},
+        {number:'2', color: assignColor(1), products: ['3001','3002','878','900']}
+      ];
+      saveToStorage();
+      render();
+    }
+  </script>
+</body>
+</html>
