@@ -1,5 +1,3 @@
-<div id="loginScreen"> ... </div>
-<div id="appContent" style="display:none"> 
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -41,6 +39,10 @@
     @media (max-width:720px){header{flex-direction:column;align-items:flex-start} .controls{flex-wrap:wrap} .card{min-width:unset}}
     /* loader */
     .status{font-size:13px;color:var(--muted);margin-left:8px}
+    /* login screen */
+    #loginScreen { position:fixed; inset:0; background:rgba(7,16,37,0.98); display:flex; justify-content:center; align-items:center; z-index:9999; flex-direction:column; gap:10px; padding:20px; }
+    #loginScreen input { width:280px; max-width:90%; }
+    #appContent.hidden { display:none; }
   </style>
 
   <!-- jsPDF and html2canvas -->
@@ -50,20 +52,24 @@
   <!-- Supabase client (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
-<body><!-- Tela de Login -->
-<div id="loginScreen" style="
-  position:fixed; inset:0; background:#071025; display:flex;
-  justify-content:center; align-items:center; flex-direction:column; gap:12px; z-index:999;
-">
+<body>
+
+<!-- Tela de Login (visível até logar) -->
+<div id="loginScreen" style="display:flex">
   <h2>Login do Sistema</h2>
   <input id="loginEmail" placeholder="Email" type="text"/>
   <input id="loginPass" placeholder="Senha" type="password"/>
-  <button onclick="fazerLogin()">Entrar</button>
+  <div style="display:flex;gap:8px">
+    <button onclick="fazerLogin()">Entrar</button>
+    <button onclick="mostrarInfoLogin()" class="secondary">Ajuda</button>
+  </div>
   <div id="loginMsg" class="small"></div>
 </div>
 
-  <header>
+<!-- APP CONTENT: TODO o resto do site fica aqui -->
+<div id="appContent" class="hidden">
 
+  <header>
     <div>
       <h1>Sistema de Paletes NLE (Sincronizado)</h1>
       <div class="small">Rápido, online — sincronizado com Supabase</div>
@@ -76,7 +82,13 @@
           <button id="btnClear" class="secondary">Limpar</button>
         </div>
       </div>
-<button id="btnCriarUser" class="secondary" onclick="criarNovoUsuario()">Criar Usuário</button>
+
+      <div class="card">
+        <div class="controls">
+          <button id="btnCriarUser" class="secondary" onclick="criarNovoUsuario()">Criar Usuário</button>
+          <button id="btnLogout" class="secondary" onclick="deslogar()">Sair</button>
+        </div>
+      </div>
 
       <div class="card">
         <div class="controls">
@@ -151,512 +163,538 @@
     </div>
   </div>
 
-  <input id="fileInput" type="file" accept="application/json" style="display:none" />
+</div> <!-- fim appContent -->
+
+<input id="fileInput" type="file" accept="application/json" style="display:none" />
+
 <script>
+  /************************************************************************
+   * CONFIGURE AQUI: Cole sua URL e ANON KEY do Supabase (não use service_role)
+   ************************************************************************/
+  const SUPABASE_URL = "https://gootxhmhkaadggiodjhq.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvb3R4aG1oa2FhZGdnaW9kamhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1OTU4NzksImV4cCI6MjA4MDE3MTg3OX0.WZNoqlNnzs4KWd5IdqJjWfFiBbdDhGPKYqneJO5ObRI";
+
+  // supabase client (UMD exposes 'supabase')
+  const createClient = window.supabase.createClient;
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // estado global
   let userRole = null;
 
-// Função login
-async function fazerLogin(){
-  const email = document.getElementById("loginEmail").value.trim();
-  const pass  = document.getElementById("loginPass").value.trim();
-  const msg   = document.getElementById("loginMsg");
+  // helpers UI
+  function mostrarInfoLogin(){ alert("Use seu email e senha. Se não conseguir logar, confirme o email no painel do Supabase ou peça para o admin criar a conta confirmada."); }
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+  async function fazerLogin(){
+    const email = document.getElementById("loginEmail").value.trim();
+    const pass  = document.getElementById("loginPass").value.trim();
+    const msg   = document.getElementById("loginMsg");
 
-  if(error){
-    msg.textContent = "Erro no login: " + error.message;
-    console.error(error);
-    return;
-  }
+    msg.textContent = "entrando...";
 
-  userRole = data.user.user_metadata.role || "common";
-  document.getElementById("loginScreen").style.display = "none";
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
 
-  await loadAndRender();
-  setupRealtime();
-  controlarInterface();
-  render();
-}
-
-// Controla o que cada role vê
-function controlarInterface(){
-  if(userRole === "admin"){
-    return; // admin não esconde nada
-  }
-
-  // USUÁRIO COMUM → esconde tudo menos separação
-  document.getElementById("btnNew").style.display = "none";
-  document.getElementById("btnExport").style.display = "none";
-  document.getElementById("btnImport").style.display = "none";
-  document.getElementById("btnPdfPortrait").style.display = "none";
-  document.getElementById("btnPdfLandscape").style.display = "none";
-  document.getElementById("btnCriarUser")?.remove(); // remove o botão se existir
-  document.querySelectorAll(".btnEdit").forEach(b => b.remove()); // remove editar dos cards
-  document.querySelectorAll(".btnView").forEach(b => b.remove()); // remove visualizar detalhes
-}
-
-
-// Função criar novo user (só funciona para admin)
-async function criarNovoUsuario(){
-  const { data: { user } } = await supabase.auth.getUser();
-  const roleAtual = user?.user_metadata?.role;
-
-  if(roleAtual !== "admin"){
-    return alert("Sem permissão!");
-  }
-
-  const email = prompt("Email do novo usuário:");
-  const senha = prompt("Senha do novo usuário:");
-  const tipo  = prompt('Será admin ou usuario? Digite exatamente: admin / usuario');
-
-  if(!email || !senha) return alert("Email ou senha inválidos!");
-
-  let novaRole = tipo === "admin" ? "admin" : "common";
-
-  const { data, error } = await supabase
-    .from('auth_users_create')  // ← endpoint virtual via RPC que vamos criar no próximo passo
-    .insert([{ email, senha, role: novaRole }]);
-
-  if(error){
-    console.error(error);
-    alert("Erro ao criar usuário no servidor.");
-  } else {
-    alert(`Usuário criado como ${tipo} ✅`);
-  }
-}
-
-
-</script>
-  <script>
-    /************************************************************************
-     * CONFIGURE AQUI: Cole sua URL e ANON KEY do Supabase (não use service_role)
-     ************************************************************************/
-    const SUPABASE_URL = "https://gootxhmhkaadggiodjhq.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvb3R4aG1oa2FhZGdnaW9kamhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1OTU4NzksImV4cCI6MjA4MDE3MTg3OX0.WZNoqlNnzs4KWd5IdqJjWfFiBbdDhGPKYqneJO5ObRI";
-
-    // supabase client (UMD exposes 'supabase')
-    const createClient = window.supabase.createClient;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
-
-    
-    
-
-    // --- Config ---
-    const MAX_PALLETS = 200;
-    const COLORS = ['#2563eb','#16a34a','#f97316','#ef4444','#8b5cf6','#06b6d4','#f59e0b','#10b981','#db2777','#84cc16','#7c3aed','#e11d48','#0ea5e9','#f43f5e','#b45309','#0891b2','#14b8a6','#a78bfa','#ef9a9a','#60a5fa'];
-
-    // --- Estado local ---
-    let pallets = []; // { id, number, color, products: [] }
-    let editingId = null;
-
-    // --- DOM refs ---
-    const grid = document.getElementById('grid');
-    const modal = document.getElementById('modal');
-    const modalDetail = document.getElementById('modalDetail');
-    const palletNumber = document.getElementById('palletNumber');
-    const palletColor = document.getElementById('palletColor');
-    const palletProducts = document.getElementById('palletProducts');
-    const modalTitle = document.getElementById('modalTitle');
-    const savePallet = document.getElementById('savePallet');
-    const cancelPallet = document.getElementById('cancelPallet');
-    const deletePallet = document.getElementById('deletePallet');
-    const btnNew = document.getElementById('btnNew');
-    const btnExport = document.getElementById('btnExport');
-    const btnImport = document.getElementById('btnImport');
-    const fileInput = document.getElementById('fileInput');
-    const search = document.getElementById('search');
-    const btnClear = document.getElementById('btnClear');
-    const btnSeparate = document.getElementById('btnSeparate');
-    const btnPdfPortrait = document.getElementById('btnPdfPortrait');
-    const btnPdfLandscape = document.getElementById('btnPdfLandscape');
-    const statusEl = document.getElementById('status');
-
-    const detailTitle = document.getElementById('detailTitle');
-    const detailColor = document.getElementById('detailColor');
-    const detailList = document.getElementById('detailList');
-    const closeDetail = document.getElementById('closeDetail');
-    const editFromDetail = document.getElementById('editFromDetail');
-
-    const modalSeparate = document.getElementById('modalSeparate');
-    const sepInput = document.getElementById('sepInput');
-    const sepResult = document.getElementById('sepResult');
-    const sepOk = document.getElementById('sepOk');
-    const sepClose = document.getElementById('sepClose');
-    const sepPrint = document.getElementById('sepPrint');
-    const sepPrintLand = document.getElementById('sepPrintLand');
-
-    // --- Helpers ---
-    function assignColor(i){ return COLORS[i % COLORS.length]; }
-
-    function setStatus(msg){
-      statusEl.textContent = msg;
+    if(error){
+      msg.textContent = "Erro no login: " + error.message;
+      console.error(error);
+      return;
     }
 
-    // --- Supabase CRUD ---
-    async function fetchPalletsFromDB(){
-      setStatus('carregando pallets...');
-      const { data, error } = await supabase
-        .from('pallets')
-        .select('*')
-        .order('id', { ascending: true });
+    // obtém role atual
+    const { data: u } = await supabase.auth.getUser();
+    userRole = u.user?.user_metadata?.role || "common";
 
-      if(error){
-        console.error('Erro ao buscar pallets', error);
-        setStatus('erro ao carregar (ver console)');
-        return [];
+    // mostra app
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("appContent").classList.remove("hidden");
+
+    // inicializa app
+    await loadAndRender();
+    setupRealtime();
+    controlarInterface();
+    render();
+  }
+
+  async function deslogar(){
+    await supabase.auth.signOut();
+    // reload para resetar estado
+    location.reload();
+  }
+
+  // --- Config ---
+  const MAX_PALLETS = 200;
+  const COLORS = ['#2563eb','#16a34a','#f97316','#ef4444','#8b5cf6','#06b6d4','#f59e0b','#10b981','#db2777','#84cc16','#7c3aed','#e11d48','#0ea5e9','#f43f5e','#b45309','#0891b2','#14b8a6','#a78bfa','#ef9a9a','#60a5fa'];
+
+  // --- Estado local ---
+  let pallets = []; // { id, number, color, products: [] }
+  let editingId = null;
+
+  // --- DOM refs ---
+  const grid = document.getElementById('grid');
+  const modal = document.getElementById('modal');
+  const modalDetail = document.getElementById('modalDetail');
+  const palletNumber = document.getElementById('palletNumber');
+  const palletColor = document.getElementById('palletColor');
+  const palletProducts = document.getElementById('palletProducts');
+  const modalTitle = document.getElementById('modalTitle');
+  const savePallet = document.getElementById('savePallet');
+  const cancelPallet = document.getElementById('cancelPallet');
+  const deletePallet = document.getElementById('deletePallet');
+  const btnNew = document.getElementById('btnNew');
+  const btnExport = document.getElementById('btnExport');
+  const btnImport = document.getElementById('btnImport');
+  const fileInput = document.getElementById('fileInput');
+  const search = document.getElementById('search');
+  const btnClear = document.getElementById('btnClear');
+  const btnSeparate = document.getElementById('btnSeparate');
+  const btnPdfPortrait = document.getElementById('btnPdfPortrait');
+  const btnPdfLandscape = document.getElementById('btnPdfLandscape');
+  const statusEl = document.getElementById('status');
+
+  const detailTitle = document.getElementById('detailTitle');
+  const detailColor = document.getElementById('detailColor');
+  const detailList = document.getElementById('detailList');
+  const closeDetail = document.getElementById('closeDetail');
+  const editFromDetail = document.getElementById('editFromDetail');
+
+  const modalSeparate = document.getElementById('modalSeparate');
+  const sepInput = document.getElementById('sepInput');
+  const sepResult = document.getElementById('sepResult');
+  const sepOk = document.getElementById('sepOk');
+  const sepClose = document.getElementById('sepClose');
+  const sepPrint = document.getElementById('sepPrint');
+  const sepPrintLand = document.getElementById('sepPrintLand');
+
+  // --- Helpers ---
+  function assignColor(i){ return COLORS[i % COLORS.length]; }
+
+  function setStatus(msg){
+    statusEl.textContent = msg;
+  }
+
+  // --- Supabase CRUD ---
+  async function fetchPalletsFromDB(){
+    setStatus('carregando pallets...');
+    const { data, error } = await supabase
+      .from('pallets')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if(error){
+      console.error('Erro ao buscar pallets', error);
+      setStatus('erro ao carregar (ver console)');
+      return [];
+    }
+    setStatus('conectado');
+    // normalize results
+    return data.map((r, idx) => ({
+      id: r.id,
+      number: r.number,
+      color: r.color || assignColor(idx),
+      products: Array.isArray(r.products) ? r.products : (r.products ? JSON.parse(r.products) : [])
+    }));
+  }
+
+  async function createPalletDB(obj){
+    const { data, error } = await supabase
+      .from('pallets')
+      .insert([{ number: obj.number, color: obj.color, products: obj.products }])
+      .select();
+    if(error){ throw error; }
+    return data[0];
+  }
+
+  async function updatePalletDB(id, obj){
+    const { data, error } = await supabase
+      .from('pallets')
+      .update({ number: obj.number, color: obj.color, products: obj.products })
+      .eq('id', id)
+      .select();
+    if(error){ throw error; }
+    return data[0];
+  }
+
+  async function deletePalletDB(id){
+    const { data, error } = await supabase
+      .from('pallets')
+      .delete()
+      .eq('id', id);
+    if(error){ throw error; }
+    return true;
+  }
+
+  // realtime subscription to update clients automatically
+  let subscription = null;
+  function setupRealtime(){
+    try{
+      if(subscription) subscription.unsubscribe();
+      subscription = supabase.channel('public:pallets')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pallets' }, payload => {
+          console.log('Realtime payload', payload);
+          loadAndRender();
+        })
+        .subscribe((status) => {
+          console.log('Realtime status', status);
+        });
+    }catch(e){
+      console.warn('Realtime não disponível', e);
+    }
+  }
+
+  // --- UI render ---
+  async function loadAndRender(){
+    // safety: only load if admin or if policies allow (we assume admin sees all)
+    pallets = await fetchPalletsFromDB();
+    render();
+  }
+
+  function render(){
+    grid.innerHTML = '';
+    const q = search.value.trim().toLowerCase();
+    pallets.forEach((p, idx) => {
+      if(q){
+        const inProducts = (p.products || []).join(',').toLowerCase().includes(q);
+        const inNumber = String(p.number).toLowerCase().includes(q);
+        if(!inProducts && !inNumber) return;
       }
-      setStatus('conectado');
-      // normalize results
-      return data.map((r, idx) => ({
-        id: r.id,
-        number: r.number,
-        color: r.color || assignColor(idx),
-        products: Array.isArray(r.products) ? r.products : (r.products ? JSON.parse(r.products) : [])
-      }));
-    }
+      const el = document.createElement('div'); el.className='pallet';
+      el.innerHTML = `
+        <div class="head">
+          <div class="colorbox" style="background:${p.color || assignColor(idx)}"></div>
+          <div>
+            <h3>Palete ${p.number}</h3>
+            <small>${(p.products||[]).length} produto(s)</small>
+          </div>
+        </div>
+        <div class="chips">${(p.products||[]).slice(0,6).map(x=>`<div class="chip">${x}</div>`).join('')}</div>
+        <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center">
+          <div class="small">#${idx+1}</div>
+          <div class="footer-actions">
+            <button data-id="${p.id}" class="btnView secondary">Ver</button>
+            <button data-id="${p.id}" class="btnEdit">Editar</button>
+          </div>
+        </div>
+      `;
+      grid.appendChild(el);
+    });
 
-    async function createPalletDB(obj){
-      const { data, error } = await supabase
-        .from('pallets')
-        .insert([{ number: obj.number, color: obj.color, products: obj.products }])
-        .select();
-      if(error){ throw error; }
-      return data[0];
-    }
+    // attach events
+    document.querySelectorAll('.btnView').forEach(b=>b.onclick=(e)=>{ const id = +e.currentTarget.dataset.id; openDetailById(id); });
+    document.querySelectorAll('.btnEdit').forEach(b=>b.onclick=(e)=>{ const id = +e.currentTarget.dataset.id; openEditById(id); });
+  }
 
-    async function updatePalletDB(id, obj){
-      const { data, error } = await supabase
-        .from('pallets')
-        .update({ number: obj.number, color: obj.color, products: obj.products })
-        .eq('id', id)
-        .select();
-      if(error){ throw error; }
-      return data[0];
-    }
+  // --- CRUD UI ---
+  function openNew(){
+    editingId = null;
+    modalTitle.textContent = 'Novo Palete';
+    palletNumber.value = '';
+    palletColor.value = '';
+    palletProducts.value = '';
+    deletePallet.style.display = 'none';
+    modal.classList.add('open');
+  }
 
-    async function deletePalletDB(id){
-      const { data, error } = await supabase
-        .from('pallets')
-        .delete()
-        .eq('id', id);
-      if(error){ throw error; }
-      return true;
-    }
+  function openEditById(id){
+    editingId = id;
+    const p = pallets.find(x=>x.id===id);
+    if(!p) return alert('Palete não encontrado');
+    modalTitle.textContent = 'Editar Palete';
+    palletNumber.value = p.number;
+    palletColor.value = p.color || '';
+    palletProducts.value = (p.products || []).join(',');
+    deletePallet.style.display = 'inline-block';
+    modal.classList.add('open');
+  }
 
-    // realtime subscription to update clients automatically
-    let subscription = null;
-    function setupRealtime(){
-      try{
-        // Channel-based realtime (recommended)
-        if(subscription) subscription.unsubscribe();
-        subscription = supabase.channel('public:pallets')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'pallets' }, payload => {
-            console.log('Realtime payload', payload);
-            loadAndRender();
-          })
-          .subscribe((status) => {
-            console.log('Realtime status', status);
-          });
-      }catch(e){
-        console.warn('Realtime não disponível', e);
+  function openDetailById(id){
+    const p = pallets.find(x=>x.id===id);
+    if(!p) return;
+    detailTitle.textContent = `Palete ${p.number}`;
+    detailColor.style.background = p.color || assignColor(0);
+    detailList.innerHTML = '';
+    (p.products || []).forEach(code=>{
+      const d = document.createElement('div'); d.className='chip'; d.textContent = code; detailList.appendChild(d);
+    });
+    modalDetail.dataset.id = id;
+    modalDetail.classList.add('open');
+  }
+
+  function closeModal(){ modal.classList.remove('open'); editingId = null; }
+  function closeDetailModal(){ modalDetail.classList.remove('open'); }
+
+  savePallet.onclick = async ()=>{
+    const num = (palletNumber.value || '').trim();
+    const raw = (palletProducts.value || '').trim();
+    if(!num){ alert('Informe o número do palete.'); return; }
+    if(!raw){ alert('Informe ao menos um produto.'); return; }
+    const products = raw.split(',').map(s=>s.trim()).filter(Boolean);
+    if(products.length === 0){ alert('Produtos inválidos.'); return; }
+
+    try{
+      if(editingId === null){
+        // create
+        const created = await createPalletDB({number:num,color:(palletColor.value || '').trim() || assignColor(pallets.length), products});
+        console.log('Criado', created);
+      } else {
+        // update
+        await updatePalletDB(editingId, {number:num,color:(palletColor.value || '').trim() || assignColor(0), products});
+        console.log('Atualizado', editingId);
       }
+      closeModal();
+      await loadAndRender();
+    }catch(err){
+      console.error('Erro ao salvar no DB', err);
+      alert('Erro ao salvar. Veja console.');
     }
+  };
 
-    // --- UI render ---
-    async function loadAndRender(){
-      pallets = await fetchPalletsFromDB();
-      render();
+  cancelPallet.onclick = ()=>{ closeModal(); };
+
+  deletePallet.onclick = async ()=>{
+    if(!confirm('Excluir este palete?')) return;
+    try{
+      await deletePalletDB(editingId);
+      closeModal();
+      await loadAndRender();
+    }catch(e){
+      console.error(e);
+      alert('Erro ao excluir.');
     }
+  };
 
-    function render(){
-      grid.innerHTML = '';
-      const q = search.value.trim().toLowerCase();
-      pallets.forEach((p, idx) => {
-        if(q){
-          const inProducts = (p.products || []).join(',').toLowerCase().includes(q);
-          const inNumber = String(p.number).toLowerCase().includes(q);
-          if(!inProducts && !inNumber) return;
-        }
-        const el = document.createElement('div'); el.className='pallet';
-        el.innerHTML = `
-          <div class="head">
-            <div class="colorbox" style="background:${p.color || assignColor(idx)}"></div>
-            <div>
-              <h3>Palete ${p.number}</h3>
-              <small>${(p.products||[]).length} produto(s)</small>
-            </div>
-          </div>
-          <div class="chips">${(p.products||[]).slice(0,6).map(x=>`<div class="chip">${x}</div>`).join('')}</div>
-          <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center">
-            <div class="small">#${idx+1}</div>
-            <div class="footer-actions">
-              <button data-id="${p.id}" class="btnView secondary">Ver</button>
-              <button data-id="${p.id}" class="btnEdit">Editar</button>
-            </div>
-          </div>
-        `;
-        grid.appendChild(el);
-      });
+  btnNew.onclick = openNew;
 
-      // attach events
-      document.querySelectorAll('.btnView').forEach(b=>b.onclick=(e)=>{ const id = +e.currentTarget.dataset.id; openDetailById(id); });
-      document.querySelectorAll('.btnEdit').forEach(b=>b.onclick=(e)=>{ const id = +e.currentTarget.dataset.id; openEditById(id); });
-    }
+  // --- Import / Export ---
+  btnExport.onclick = async ()=>{
+    const data = await fetchPalletsFromDB();
+    const dataStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([dataStr], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'pallets_export.json'; a.click(); URL.revokeObjectURL(url);
+  };
 
-    // --- CRUD UI ---
-    function openNew(){
-      editingId = null;
-      modalTitle.textContent = 'Novo Palete';
-      palletNumber.value = '';
-      palletColor.value = '';
-      palletProducts.value = '';
-      deletePallet.style.display = 'none';
-      modal.classList.add('open');
-    }
-
-    function openEditById(id){
-      editingId = id;
-      const p = pallets.find(x=>x.id===id);
-      if(!p) return alert('Palete não encontrado');
-      modalTitle.textContent = 'Editar Palete';
-      palletNumber.value = p.number;
-      palletColor.value = p.color || '';
-      palletProducts.value = (p.products || []).join(',');
-      deletePallet.style.display = 'inline-block';
-      modal.classList.add('open');
-    }
-
-    function openDetailById(id){
-      const p = pallets.find(x=>x.id===id);
-      if(!p) return;
-      detailTitle.textContent = `Palete ${p.number}`;
-      detailColor.style.background = p.color || assignColor(0);
-      detailList.innerHTML = '';
-      (p.products || []).forEach(code=>{
-        const d = document.createElement('div'); d.className='chip'; d.textContent = code; detailList.appendChild(d);
-      });
-      modalDetail.dataset.id = id;
-      modalDetail.classList.add('open');
-    }
-
-    function closeModal(){ modal.classList.remove('open'); editingId = null; }
-    function closeDetailModal(){ modalDetail.classList.remove('open'); }
-
-    savePallet.onclick = async ()=>{
-      const num = (palletNumber.value || '').trim();
-      const raw = (palletProducts.value || '').trim();
-      if(!num){ alert('Informe o número do palete.'); return; }
-      if(!raw){ alert('Informe ao menos um produto.'); return; }
-      const products = raw.split(',').map(s=>s.trim()).filter(Boolean);
-      if(products.length === 0){ alert('Produtos inválidos.'); return; }
-
+  btnImport.onclick = ()=>{ fileInput.click(); };
+  fileInput.onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = async ()=>{
       try{
-        if(editingId === null){
-          // create
-          const created = await createPalletDB({number:num,color:(palletColor.value || '').trim() || assignColor(pallets.length), products});
-          console.log('Criado', created);
-        } else {
-          // update
-          await updatePalletDB(editingId, {number:num,color:(palletColor.value || '').trim() || assignColor(0), products});
-          console.log('Atualizado', editingId);
-        }
-        closeModal();
+        let imported = JSON.parse(r.result);
+        if(!Array.isArray(imported)) imported = [imported];
+        const toUpsert = imported.map((p,i)=>({
+          id: p.id ?? undefined,
+          number: p.number ?? p.numero ?? (`P${i+1}`),
+          color: p.color ?? p.cor ?? assignColor(i),
+          products: p.products ?? p.produtos ?? []
+        }));
+        const { error } = await supabase.from('pallets').upsert(toUpsert);
+        if(error) throw error;
+        alert('Importação concluída');
         await loadAndRender();
       }catch(err){
-        console.error('Erro ao salvar no DB', err);
-        alert('Erro ao salvar. Veja console.');
+        console.error(err);
+        alert('Arquivo inválido. Certifique-se de ser um JSON com formato correto.');
       }
     };
+    r.readAsText(f);
+  };
 
-    cancelPallet.onclick = ()=>{ closeModal(); };
+  search.oninput = ()=>render();
+  btnClear.onclick = ()=>{ search.value=''; render(); };
 
-    deletePallet.onclick = async ()=>{
-      if(!confirm('Excluir este palete?')) return;
-      try{
-        await deletePalletDB(editingId);
-        closeModal();
-        await loadAndRender();
-      }catch(e){
-        console.error(e);
-        alert('Erro ao excluir.');
-      }
-    };
+  closeDetail.onclick = closeDetailModal;
+  editFromDetail.onclick = ()=>{ const id = +modalDetail.dataset.id; closeDetailModal(); openEditById(id); };
 
-    btnNew.onclick = openNew;
+  // --- Separação ---
+  function openSeparacao(){ sepInput.value = ''; sepResult.innerHTML = ''; modalSeparate.classList.add('open'); }
+  function closeSeparacao(){ modalSeparate.classList.remove('open'); }
+  btnSeparate.onclick = openSeparacao;
+  sepClose.onclick = closeSeparacao;
 
-    // --- Import / Export ---
-    btnExport.onclick = async ()=>{
-      // export from DB
-      const data = await fetchPalletsFromDB();
-      const dataStr = JSON.stringify(data, null, 2);
-      const blob = new Blob([dataStr], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'pallets_export.json'; a.click(); URL.revokeObjectURL(url);
-    };
-
-    btnImport.onclick = ()=>{ fileInput.click(); };
-    fileInput.onchange = async (e)=>{
-      const f = e.target.files[0]; if(!f) return;
-      const r = new FileReader();
-      r.onload = async ()=>{
-        try{
-          let imported = JSON.parse(r.result);
-          if(!Array.isArray(imported)) imported = [imported];
-          // normalize and upsert (id optional)
-          const toUpsert = imported.map((p,i)=>({
-            id: p.id ?? undefined,
-            number: p.number ?? p.numero ?? (`P${i+1}`),
-            color: p.color ?? p.cor ?? assignColor(i),
-            products: p.products ?? p.produtos ?? []
-          }));
-          // use upsert so existing ids are updated
-          const { error } = await supabase.from('pallets').upsert(toUpsert);
-          if(error) throw error;
-          alert('Importação concluída');
-          await loadAndRender();
-        }catch(err){
-          console.error(err);
-          alert('Arquivo inválido. Certifique-se de ser um JSON com formato correto.');
-        }
-      };
-      r.readAsText(f);
-    };
-
-    search.oninput = ()=>render();
-    btnClear.onclick = ()=>{ search.value=''; render(); };
-
-    closeDetail.onclick = closeDetailModal;
-    editFromDetail.onclick = ()=>{ const id = +modalDetail.dataset.id; closeDetailModal(); openEditById(id); };
-
-    // --- Separação ---
-    function openSeparacao(){ sepInput.value = ''; sepResult.innerHTML = ''; modalSeparate.classList.add('open'); }
-    function closeSeparacao(){ modalSeparate.classList.remove('open'); }
-    btnSeparate.onclick = openSeparacao;
-    sepClose.onclick = closeSeparacao;
-
-    function processarSeparacao(){
-      const raw = (sepInput.value || '').trim();
-      if(!raw){ alert('Digite ao menos um código.'); return null; }
-      const lista = raw.split(',').map(s=>s.trim()).filter(Boolean);
-      const agrupado = [];
-      pallets.forEach(p=>{
-        const encontrados = (p.products || []).filter(prod => lista.includes(String(prod)));
-        if(encontrados.length > 0) agrupado.push({id: p.id, number: p.number, color: p.color || assignColor(0), produtos: encontrados});
-      });
-      // render agrupado
-      sepResult.innerHTML = '';
-      if(agrupado.length === 0){ sepResult.innerHTML = '<div class="small">Nenhum produto encontrado nos paletes cadastrados.</div>'; return agrupado; }
-      agrupado.forEach(a=>{
-        const card = document.createElement('div'); card.className = 'resultado-palete';
-        card.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><div style="width:18px;height:18px;border-radius:4px;background:${a.color};border:1px solid rgba(0,0,0,0.12)"></div><div><strong>Palete ${a.number}</strong></div></div><div style="margin-top:8px"><strong>Produtos encontrados:</strong> ${a.produtos.join(', ')}</div>`;
-        sepResult.appendChild(card);
-      });
-      return agrupado;
-    }
-
-    sepOk.onclick = ()=>{ processarSeparacao(); };
-    sepPrint.onclick = async ()=>{ const agr = processarSeparacao(); if(!agr || agr.length===0) return; await gerarPdfFromAgrupado(agr,'portrait'); };
-    sepPrintLand.onclick = async ()=>{ const agr = processarSeparacao(); if(!agr || agr.length===0) return; await gerarPdfFromAgrupado(agr,'landscape'); };
-
-    // --- PDF generation (cards) ---
-    async function gerarPdfFromAgrupado(agrupado, orientation='portrait'){
-      const temp = document.createElement('div');
-      temp.style.padding = '16px';
-      temp.style.background = '#fff';
-      temp.style.color = '#000';
-      temp.style.width = (orientation === 'portrait') ? '768px' : '1100px';
-      temp.style.fontFamily = 'Arial, sans-serif';
-
-      const header = document.createElement('div');
-      header.style.display = 'flex'; header.style.justifyContent = 'space-between'; header.style.alignItems = 'center'; header.style.marginBottom = '12px';
-      const title = document.createElement('div');
-      title.innerHTML = `<h2 style="margin:0">Sistema de Paletes NLE - Separação</h2><div style="font-size:12px;color:#333">Data: ${new Date().toLocaleString()}</div>`;
-      const logoBox = document.createElement('div');
-      logoBox.style.width = '120px'; logoBox.style.height='40px'; logoBox.style.border='1px dashed #ccc'; logoBox.style.display='flex'; logoBox.style.alignItems='center'; logoBox.style.justifyContent='center';
-      logoBox.textContent = 'LOGO';
-      header.appendChild(title); header.appendChild(logoBox);
-      temp.appendChild(header);
-
-      agrupado.forEach(a=>{
-        const card = document.createElement('div');
-        card.style.border = '1px solid #ddd';
-        card.style.borderRadius = '8px';
-        card.style.padding = '10px';
-        card.style.marginBottom = '10px';
-        card.style.display = 'flex';
-        card.style.gap = '12px';
-        card.style.alignItems = 'flex-start';
-
-        const color = document.createElement('div');
-        color.style.width = '18px'; color.style.height = '18px'; color.style.borderRadius='4px'; color.style.background = a.color; color.style.border='1px solid #999';
-
-        const content = document.createElement('div');
-        const h = document.createElement('div'); h.innerHTML = `<strong>Palete ${a.number}</strong>`;
-        const p = document.createElement('div'); p.style.marginTop='6px'; p.innerHTML = `<strong>Produtos encontrados:</strong> ${a.produtos.join(', ')}`;
-
-        content.appendChild(h); content.appendChild(p);
-        card.appendChild(color); card.appendChild(content);
-        temp.appendChild(card);
-      });
-
-      document.body.appendChild(temp);
-      const canvas = await html2canvas(temp, {scale:2});
-      const imgData = canvas.toDataURL('image/png');
-      document.body.removeChild(temp);
-
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({orientation: orientation, unit:'pt', format:'a4'});
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgProps = { width: canvas.width, height: canvas.height };
-      const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height);
-      const imgW = imgProps.width * ratio;
-      const imgH = imgProps.height * ratio;
-      pdf.addImage(imgData, 'PNG', (pdfWidth - imgW)/2, 20, imgW, imgH);
-      pdf.save(`separacao_${(new Date()).toISOString().slice(0,19).replace(/[:T]/g,'_')}.pdf`);
-    }
-
-    // top-level pdfs (all pallets)
-    btnPdfPortrait.onclick = async ()=>{
-      if(pallets.length === 0){ alert('Nenhum palete cadastrado.'); return; }
-      const agr = pallets.map(p=>({id:p.id,number:p.number,color:p.color || assignColor(0),produtos: p.products || []}));
-      await gerarPdfFromAgrupado(agr,'portrait');
-    };
-    btnPdfLandscape.onclick = async ()=>{
-      if(pallets.length === 0){ alert('Nenhum palete cadastrado.'); return; }
-      const agr = pallets.map(p=>({id:p.id,number:p.number,color:p.color || assignColor(0),produtos: p.products || []}));
-      await gerarPdfFromAgrupado(agr,'landscape');
-    };
-
-// --- Init ---
-function controlarInterface(){
-  if(userRole === "admin"){
-    return; // admin continua full acesso
+  function processarSeparacao(){
+    const raw = (sepInput.value || '').trim();
+    if(!raw){ alert('Digite ao menos um código.'); return null; }
+    const lista = raw.split(',').map(s=>s.trim()).filter(Boolean);
+    const agrupado = [];
+    pallets.forEach(p=>{
+      const encontrados = (p.products || []).filter(prod => lista.includes(String(prod)));
+      if(encontrados.length > 0) agrupado.push({id: p.id, number: p.number, color: p.color || assignColor(0), produtos: encontrados});
+    });
+    // render agrupado
+    sepResult.innerHTML = '';
+    if(agrupado.length === 0){ sepResult.innerHTML = '<div class="small">Nenhum produto encontrado nos paletes cadastrados.</div>'; return agrupado; }
+    agrupado.forEach(a=>{
+      const card = document.createElement('div'); card.className = 'resultado-palete';
+      card.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><div style="width:18px;height:18px;border-radius:4px;background:${a.color};border:1px solid rgba(0,0,0,0.12)"></div><div><strong>Palete ${a.number}</strong></div></div><div style="margin-top:8px"><strong>Produtos encontrados:</strong> ${a.produtos.join(', ')}</div>`;
+      sepResult.appendChild(card);
+    });
+    return agrupado;
   }
 
-  // BLOQUEIO TOTAL PARA USUÁRIO COMUM
-  document.getElementById("btnNew").remove();
-  document.getElementById("btnExport").remove();
-  document.getElementById("btnImport").remove();
-  document.getElementById("btnPdfPortrait").remove();
-  document.getElementById("btnPdfLandscape").remove();
-  document.getElementById("btnSeparate").style.display = ""; // mantém separação
-  document.getElementById("btnCriarUser")?.remove();
+  sepOk.onclick = ()=>{ processarSeparacao(); };
+  sepPrint.onclick = async ()=>{ const agr = processarSeparacao(); if(!agr || agr.length===0) return; await gerarPdfFromAgrupado(agr,'portrait'); };
+  sepPrintLand.onclick = async ()=>{ const agr = processarSeparacao(); if(!agr || agr.length===0) return; await gerarPdfFromAgrupado(agr,'landscape'); };
 
-  // REMOVE qualquer botão de editar/ver dos paletes
-  const listenerGrid = document.getElementById("grid");
-  if(!listenerGrid) return;
+  // --- PDF generation (cards) ---
+  async function gerarPdfFromAgrupado(agrupado, orientation='portrait'){
+    const temp = document.createElement('div');
+    temp.style.padding = '16px';
+    temp.style.background = '#fff';
+    temp.style.color = '#000';
+    temp.style.width = (orientation === 'portrait') ? '768px' : '1100px';
+    temp.style.fontFamily = 'Arial, sans-serif';
 
-  // Observa novos itens que o realtime adicionar e remove botões
-  const observer = new MutationObserver(()=>{
-    listenerGrid.querySelectorAll(".btnEdit").forEach(b => b.remove());
-    listenerGrid.querySelectorAll(".btnView").forEach(b => b.remove());
-  });
+    const header = document.createElement('div');
+    header.style.display = 'flex'; header.style.justifyContent = 'space-between'; header.style.alignItems = 'center'; header.style.marginBottom = '12px';
+    const title = document.createElement('div');
+    title.innerHTML = `<h2 style="margin:0">Sistema de Paletes NLE - Separação</h2><div style="font-size:12px;color:#333">Data: ${new Date().toLocaleString()}</div>`;
+    const logoBox = document.createElement('div');
+    logoBox.style.width = '120px'; logoBox.style.height='40px'; logoBox.style.border='1px dashed #ccc'; logoBox.style.display='flex'; logoBox.style.alignItems='center'; logoBox.style.justifyContent='center';
+    logoBox.textContent = 'LOGO';
+    header.appendChild(title); header.appendChild(logoBox);
+    temp.appendChild(header);
 
-  observer.observe(listenerGrid, { childList:true, subtree:true });
-}
+    agrupado.forEach(a=>{
+      const card = document.createElement('div');
+      card.style.border = '1px solid #ddd';
+      card.style.borderRadius = '8px';
+      card.style.padding = '10px';
+      card.style.marginBottom = '10px';
+      card.style.display = 'flex';
+      card.style.gap = '12px';
+      card.style.alignItems = 'flex-start';
 
+      const color = document.createElement('div');
+      color.style.width = '18px'; color.style.height = '18px'; color.style.borderRadius='4px'; color.style.background = a.color; color.style.border='1px solid #999';
 
-  </script>
+      const content = document.createElement('div');
+      const h = document.createElement('div'); h.innerHTML = `<strong>Palete ${a.number}</strong>`;
+      const p = document.createElement('div'); p.style.marginTop='6px'; p.innerHTML = `<strong>Produtos encontrados:</strong> ${a.produtos.join(', ')}`;
+
+      content.appendChild(h); content.appendChild(p);
+      card.appendChild(color); card.appendChild(content);
+      temp.appendChild(card);
+    });
+
+    document.body.appendChild(temp);
+    const canvas = await html2canvas(temp, {scale:2});
+    const imgData = canvas.toDataURL('image/png');
+    document.body.removeChild(temp);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation: orientation, unit:'pt', format:'a4'});
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgProps = { width: canvas.width, height: canvas.height };
+    const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height);
+    const imgW = imgProps.width * ratio;
+    const imgH = imgProps.height * ratio;
+    pdf.addImage(imgData, 'PNG', (pdfWidth - imgW)/2, 20, imgW, imgH);
+    pdf.save(`separacao_${(new Date()).toISOString().slice(0,19).replace(/[:T]/g,'_')}.pdf`);
+  }
+
+  // top-level pdfs (all pallets)
+  btnPdfPortrait.onclick = async ()=>{
+    if(pallets.length === 0){ alert('Nenhum palete cadastrado.'); return; }
+    const agr = pallets.map(p=>({id:p.id,number:p.number,color:p.color || assignColor(0),produtos: p.products || []}));
+    await gerarPdfFromAgrupado(agr,'portrait');
+  };
+  btnPdfLandscape.onclick = async ()=>{
+    if(pallets.length === 0){ alert('Nenhum palete cadastrado.'); return; }
+    const agr = pallets.map(p=>({id:p.id,number:p.number,color:p.color || assignColor(0),produtos: p.products || []}));
+    await gerarPdfFromAgrupado(agr,'landscape');
+  };
+
+  // --- Controle de interface por role ---
+  function controlarInterface(){
+    // if admin -> show everything (nothing to hide)
+    if(userRole === "admin"){
+      // ensure buttons exist (in case removed earlier)
+      // nothing to do; admin sees everything by default
+      return;
+    }
+
+    // USUÁRIO COMUM → esconde tudo menos separação
+    try {
+      document.getElementById("btnNew")?.remove();
+      document.getElementById("btnExport")?.remove();
+      document.getElementById("btnImport")?.remove();
+      document.getElementById("btnPdfPortrait")?.remove();
+      document.getElementById("btnPdfLandscape")?.remove();
+      document.getElementById("btnCriarUser")?.remove();
+      // keep separate button (user can use)
+      // remove logout? keep logout
+    } catch(e){ console.warn(e); }
+
+    // Remove view/edit buttons from existing cards and observe new ones
+    grid.querySelectorAll(".btnEdit").forEach(b => b.remove());
+    grid.querySelectorAll(".btnView").forEach(b => b.remove());
+
+    const listenerGrid = document.getElementById("grid");
+    if(!listenerGrid) return;
+
+    const observer = new MutationObserver(()=>{
+      listenerGrid.querySelectorAll(".btnEdit").forEach(b => b.remove());
+      listenerGrid.querySelectorAll(".btnView").forEach(b => b.remove());
+    });
+
+    observer.observe(listenerGrid, { childList:true, subtree:true });
+  }
+
+  // --- Criar novo usuário (APENAS ADMIN) via RPC criar_novo_user(email, senha, role) ---
+  async function criarNovoUsuario(){
+    // check current user role
+    const { data } = await supabase.auth.getUser();
+    const roleAtual = data.user?.user_metadata?.role;
+    if(roleAtual !== "admin"){
+      return alert("Sem permissão!");
+    }
+
+    const email = prompt("Email do novo usuário:");
+    const senha = prompt("Senha do novo usuário:");
+    const tipo  = prompt('Será "admin" ou "usuario"? Digite exatamente: admin / usuario');
+
+    if(!email || !senha) return alert("Email ou senha inválidos!");
+
+    const novaRole = tipo === "admin" ? "admin" : "common";
+
+    // Chama RPC (certifique-se de criar a função criar_novo_user no SQL)
+    const { error } = await supabase.rpc("criar_novo_user", { email, senha, role: novaRole });
+
+    if(error){
+      console.error(error);
+      alert("Erro ao criar usuário no servidor. Verifique se a função RPC criar_novo_user existe no seu banco.");
+    } else {
+      alert(`Usuário criado como ${novaRole} ✅`);
+    }
+  }
+
+  // --- Init: verifica sessão e mostra app se logado ---
+  (async ()=>{
+    try{
+      const { data } = await supabase.auth.getSession();
+      if(!data?.session){
+        // não logado -> mostra login
+        document.getElementById("loginScreen").style.display = "flex";
+        document.getElementById("appContent").classList.add("hidden");
+        setStatus('aguardando login');
+        return;
+      }
+
+      // já logado
+      const { data: u } = await supabase.auth.getUser();
+      userRole = u.user?.user_metadata?.role || "common";
+
+      document.getElementById("loginScreen").style.display = "none";
+      document.getElementById("appContent").classList.remove("hidden");
+
+      await loadAndRender();
+      setupRealtime();
+      controlarInterface();
+    }catch(e){
+      console.error("Erro init:", e);
+      setStatus('erro ao iniciar');
+    }
+  })();
+</script>
 </body>
 </html>
