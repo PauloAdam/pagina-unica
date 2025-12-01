@@ -48,7 +48,18 @@
   <!-- Supabase client (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
-<body>
+<body><!-- Tela de Login -->
+<div id="loginScreen" style="
+  position:fixed; inset:0; background:#071025; display:flex;
+  justify-content:center; align-items:center; flex-direction:column; gap:12px; z-index:999;
+">
+  <h2>Login do Sistema</h2>
+  <input id="loginEmail" placeholder="Email" type="text"/>
+  <input id="loginPass" placeholder="Senha" type="password"/>
+  <button onclick="fazerLogin()">Entrar</button>
+  <div id="loginMsg" class="small"></div>
+</div>
+
   <header>
     <div>
       <h1>Sistema de Paletes NLE (Sincronizado)</h1>
