@@ -1,3 +1,5 @@
+<div id="loginScreen"> ... </div>
+<div id="appContent" style="display:none"> 
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -627,16 +629,33 @@ async function criarNovoUsuario(){
     };
 
 // --- Init ---
-(async ()=>{
-  const { data } = await supabase.auth.getSession();
-  if(data.session){
-    userRole = data.session.user.user_metadata.role || "common";
-    document.getElementById("loginScreen").style.display = "none";
-    controlarInterface();
-    await loadAndRender();
-    setupRealtime();
+function controlarInterface(){
+  if(userRole === "admin"){
+    return; // admin continua full acesso
   }
-})();
+
+  // BLOQUEIO TOTAL PARA USUÁRIO COMUM
+  document.getElementById("btnNew").remove();
+  document.getElementById("btnExport").remove();
+  document.getElementById("btnImport").remove();
+  document.getElementById("btnPdfPortrait").remove();
+  document.getElementById("btnPdfLandscape").remove();
+  document.getElementById("btnSeparate").style.display = ""; // mantém separação
+  document.getElementById("btnCriarUser")?.remove();
+
+  // REMOVE qualquer botão de editar/ver dos paletes
+  const listenerGrid = document.getElementById("grid");
+  if(!listenerGrid) return;
+
+  // Observa novos itens que o realtime adicionar e remove botões
+  const observer = new MutationObserver(()=>{
+    listenerGrid.querySelectorAll(".btnEdit").forEach(b => b.remove());
+    listenerGrid.querySelectorAll(".btnView").forEach(b => b.remove());
+  });
+
+  observer.observe(listenerGrid, { childList:true, subtree:true });
+}
+
 
   </script>
 </body>
