@@ -189,28 +189,41 @@ function controlarInterface(){
 
 // Função criar novo user (só funciona para admin)
 async function criarNovoUsuario(){
+  // verifica se quem está criando é admin
   const { data } = await supabase.auth.getUser();
-  const role = data.user?.user_metadata?.role;
+  const roleAtual = data.user?.user_metadata?.role;
 
-  if(role !== "admin"){
-    return alert("Sem permissão!"); // trava se não for admin
+  if(roleAtual !== "admin"){
+    return alert("Sem permissão!");
   }
 
   const email = prompt("Digite o email do novo usuário:");
   const senha = prompt("Digite a senha:");
 
-  const { data: user, error } = await supabase.auth.signUp({
+  if(!email || !senha) return alert("Email ou senha inválidos!");
+
+  // pergunta o tipo
+  const tipo = prompt('Será "admin" ou "usuario"? Digite exatamente: admin / usuario');
+
+  let novaRole = "common"; // padrão pra usuário comum
+  if(tipo === "admin") novaRole = "admin";
+  if(tipo === "usuario") novaRole = "common";
+
+  // cria o novo usuário com a role escolhida no metadata
+  const { error } = await supabase.auth.signUp({
     email,
     password: senha,
-    options: { data: { role: "common" } } // salva role do usuário comum
+    options: { data: { role: novaRole } }
   });
 
   if(error){
+    console.error(error);
     alert("Erro ao criar usuário");
   } else {
-    alert("Usuário criado com sucesso!");
+    alert(`Usuário criado como: ${tipo}!`);
   }
 }
+
 
 </script>
   <script>
