@@ -148,7 +148,63 @@
   </div>
 
   <input id="fileInput" type="file" accept="application/json" style="display:none" />
+<script>
+  let userRole = null;
 
+// Função login
+async function fazerLogin(){
+  const email = document.getElementById("loginEmail").value.trim();
+  const pass  = document.getElementById("loginPass").value.trim();
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+  const msg = document.getElementById("loginMsg");
+
+  if(error){
+    msg.textContent = "Erro no login!";
+    return;
+  }
+
+  userRole = data.user.user_metadata.role || "common";
+  document.getElementById("loginScreen").style.display = "none";
+
+  controlarInterface();
+}
+
+// Controla o que cada role vê
+function controlarInterface(){
+  if(userRole === "admin"){
+    // admin vê tudo
+    document.querySelectorAll("button").forEach(b => b.style.display = "");
+  } else {
+    // comum vê apenas o botão separação
+    document.getElementById("btnNew").style.display = "none";
+    document.getElementById("btnExport").style.display = "none";
+    document.getElementById("btnImport").style.display = "none";
+    document.getElementById("btnPdfPortrait").style.display = "none";
+    document.getElementById("btnPdfLandscape").style.display = "none";
+  }
+}
+
+// Função criar novo user (só funciona para admin)
+async function criarNovoUsuario(){
+  if(userRole !== "admin") return alert("Sem permissão!");
+
+  const email = prompt("Digite o email do novo usuário:");
+  const senha = prompt("Digite a senha:");
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password: senha,
+    options: { data: { role: "common" } } // salva metadata
+  });
+
+  if(error){
+    alert("Erro ao criar usuário");
+  }else{
+    alert("Usuário criado!");
+  }
+}
+</script>
   <script>
     /************************************************************************
      * CONFIGURE AQUI: Cole sua URL e ANON KEY do Supabase (não use service_role)
