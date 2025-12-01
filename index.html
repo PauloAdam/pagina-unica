@@ -179,17 +179,20 @@ async function fazerLogin(){
 // Controla o que cada role vê
 function controlarInterface(){
   if(userRole === "admin"){
-    // admin vê tudo
-    document.querySelectorAll("button").forEach(b => b.style.display = "");
-  } else {
-    // comum vê apenas o botão separação
-    document.getElementById("btnNew").style.display = "none";
-    document.getElementById("btnExport").style.display = "none";
-    document.getElementById("btnImport").style.display = "none";
-    document.getElementById("btnPdfPortrait").style.display = "none";
-    document.getElementById("btnPdfLandscape").style.display = "none";
+    return; // admin não esconde nada
   }
+
+  // USUÁRIO COMUM → esconde tudo menos separação
+  document.getElementById("btnNew").style.display = "none";
+  document.getElementById("btnExport").style.display = "none";
+  document.getElementById("btnImport").style.display = "none";
+  document.getElementById("btnPdfPortrait").style.display = "none";
+  document.getElementById("btnPdfLandscape").style.display = "none";
+  document.getElementById("btnCriarUser")?.remove(); // remove o botão se existir
+  document.querySelectorAll(".btnEdit").forEach(b => b.remove()); // remove editar dos cards
+  document.querySelectorAll(".btnView").forEach(b => b.remove()); // remove visualizar detalhes
 }
+
 
 // Função criar novo user (só funciona para admin)
 async function criarNovoUsuario(){
