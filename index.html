@@ -641,32 +641,30 @@
   }
 
   // --- Criar novo usuário (APENAS ADMIN) via RPC criar_novo_user(email, senha, role) ---
-  async function criarNovoUsuario(){
-    // check current user role
-    const { data } = await supabase.auth.getUser();
-    const roleAtual = data.user?.user_metadata?.role;
-    if(roleAtual !== "admin"){
-      return alert("Sem permissão!");
+async function criarNovoUsuario(){
+  const email = prompt("Email:");
+  const senha = prompt("Senha:");
+  const tipo = prompt('admin ou usuario?');
+
+  if(!email || !senha) return alert("Dados inválidos!");
+
+  const role = (tipo === "admin") ? "admin" : "common";
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password: senha,
+    options: {
+      data: { role }
     }
+  });
 
-    const email = prompt("Email do novo usuário:");
-    const senha = prompt("Senha do novo usuário:");
-    const tipo  = prompt('Será "admin" ou "usuario"? Digite exatamente: admin / usuario');
-
-    if(!email || !senha) return alert("Email ou senha inválidos!");
-
-    const novaRole = tipo === "admin" ? "admin" : "common";
-
-    // Chama RPC (certifique-se de criar a função criar_novo_user no SQL)
-    const { error } = await supabase.rpc("criar_novo_user", { email, senha, role: novaRole });
-
-    if(error){
-      console.error(error);
-      alert("Erro ao criar usuário no servidor. Verifique se a função RPC criar_novo_user existe no seu banco.");
-    } else {
-      alert(`Usuário criado como ${novaRole} ✅`);
-    }
+  if(error){
+    console.error(error);
+    alert("Erro ao criar usuário: " + error.message);
+  } else {
+    alert("Usuário criado com sucesso! Ele deve confirmar o email.");
   }
+}
 
   // --- Init: verifica sessão e mostra app se logado ---
   (async ()=>{
